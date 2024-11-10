@@ -1,34 +1,43 @@
 from flask import Flask, render_template, request, url_for, session
 import numpy as np
 import matplotlib
+from scipy import stats
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 
 app = Flask(__name__)
-app.secret_key = "your_secret_key_here"  # Replace with your own secret key, needed for session management
+app.secret_key = "mlsecretkey"  # Replace with your own secret key, needed for session management
 
 
 def generate_data(N, mu, beta0, beta1, sigma2, S):
     # Generate data and initial plots
 
     # TODO 1: Generate a random dataset X of size N with values between 0 and 1
-    X = None  # Replace with code to generate random values for X
-
+    X = np.random.rand(N) # Replace with code to generate random values for X
+    
     # TODO 2: Generate a random dataset Y using the specified beta0, beta1, mu, and sigma2
     # Y = beta0 + beta1 * X + mu + error term
-    Y = None  # Replace with code to generate Y
+    Y = beta0 + beta1 * X + np.random.normal(mu, np.sqrt(sigma2), N)
 
     # TODO 3: Fit a linear regression model to X and Y
-    model = None  # Initialize the LinearRegression model
-    # None  # Fit the model to X and Y
-    slope = None  # Extract the slope (coefficient) from the fitted model
-    intercept = None  # Extract the intercept from the fitted model
+    model = LinearRegression()  # Initialize the LinearRegression model
+    model.fit(X.reshape(-1, 1), Y)  # Fit the model to X and Y
+    slope = model.coef_[0]  # Extract the slope (coefficient) from the fitted model
+    intercept = model.intercept_  # Extract the intercept from the fitted model
 
     # TODO 4: Generate a scatter plot of (X, Y) with the fitted regression line
+    plt.figure()
+    plt.scatter(X, Y, color='blue', label="Data Points")
+    plt.plot(X, slope * X + intercept, color='red', label=f"Fitted Line")
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.title(f"Linear Fit: y = {intercept:.2f} + {slope:.2f}x")
+    plt.legend()
     plot1_path = "static/plot1.png"
-    # Replace with code to generate and save the scatter plot
+    plt.savefig(plot1_path)
+    plt.close()
 
     # TODO 5: Run S simulations to generate slopes and intercepts
     slopes = []
@@ -36,25 +45,41 @@ def generate_data(N, mu, beta0, beta1, sigma2, S):
 
     for _ in range(S):
         # TODO 6: Generate simulated datasets using the same beta0 and beta1
-        X_sim = None  # Replace with code to generate simulated X values
-        Y_sim = None  # Replace with code to generate simulated Y values
+        X_sim = np.random.rand(N)  # Replace with code to generate simulated X values
+        Y_sim = beta0 + beta1 * X_sim + np.random.normal(mu, np.sqrt(sigma2), N)  # Replace with code to generate simulated Y values
 
         # TODO 7: Fit linear regression to simulated data and store slope and intercept
-        sim_model = None  # Replace with code to fit the model
-        sim_slope = None  # Extract slope from sim_model
-        sim_intercept = None  # Extract intercept from sim_model
+        sim_model = LinearRegression()  # Replace with code to fit the model
+        sim_model.fit(X_sim.reshape(-1, 1), Y_sim)
+        sim_slope = sim_model.coef_[0] # Extract slope from sim_model
+        sim_intercept = sim_model.intercept_  # Extract intercept from sim_model
 
         slopes.append(sim_slope)
         intercepts.append(sim_intercept)
 
     # TODO 8: Plot histograms of slopes and intercepts
+    plt.figure(figsize=(10, 5))
+    # Plot histogram of slopes
+    plt.subplot(1, 2, 1)
+    plt.hist(slopes, bins=15, color='skyblue', edgecolor='black')
+    plt.xlabel("Slope")
+    plt.ylabel("Frequency")
+    plt.title("Histogram of Slopes")
+    # Plot histogram of intercepts
+    plt.subplot(1, 2, 2)
+    plt.hist(intercepts, bins=15, color='lightcoral', edgecolor='black')
+    plt.xlabel("Intercept")
+    plt.ylabel("Frequency")
+    plt.title("Histogram of Intercepts")
+    # saving
     plot2_path = "static/plot2.png"
-    # Replace with code to generate and save the histogram plot
+    plt.savefig(plot2_path)
+    plt.close()
 
     # TODO 9: Return data needed for further analysis, including slopes and intercepts
     # Calculate proportions of slopes and intercepts more extreme than observed
-    slope_more_extreme = None  # Replace with code to calculate proportion of slopes more extreme than observed
-    intercept_extreme = None  # Replace with code to calculate proportion of intercepts more extreme than observed
+    slope_more_extreme = np.mean([abs(s) > abs(slope) for s in slopes])  # Replace with code to calculate proportion of slopes more extreme than observed
+    intercept_extreme = np.mean([abs(i) > abs(intercept) for i in intercepts])  # Replace with code to calculate proportion of intercepts more extreme than observed
 
     # Return data needed for further analysis
     return (
@@ -150,24 +175,60 @@ def hypothesis_test():
     parameter = request.form.get("parameter")
     test_type = request.form.get("test_type")
 
+    # Logging inputs
+    app.logger.info(f"Received inputs - parameter: {parameter}, test_type: {test_type}")
+    app.logger.info(f"Slope: {slope}, Intercept: {intercept}, Beta0: {beta0}, Beta1: {beta1}")
+
+
     # Use the slopes or intercepts from the simulations
     if parameter == "slope":
         simulated_stats = np.array(slopes)
         observed_stat = slope
         hypothesized_value = beta1
-    else:
+    elif parameter == "intercept":
         simulated_stats = np.array(intercepts)
         observed_stat = intercept
         hypothesized_value = beta0
+    else:
+        app.logger.error("Invalid parameter specified.")
+        return "Invalid parameter specified.", 400
 
     # TODO 10: Calculate p-value based on test type
     p_value = None
+    if simulated_stats is not None and observed_stat is not None:
+        if test_type == "!=":
+            p_value = np.mean(np.abs(simulated_stats - hypothesized_value) >= np.abs(observed_stat - hypothesized_value))
+        elif test_type == ">":
+            p_value = np.mean(simulated_stats > observed_stat)
+        elif test_type == "<":
+            p_value = np.mean(simulated_stats < observed_stat)
+        # Log and return an error if the test_type is invalid
+        else:
+            app.logger.error("Invalid test type specified.")
+            return "Invalid test type specified.", 400
+        
+    # Log p_value after calculation
+    app.logger.info(f"Calculated p_value: {p_value}")
 
     # TODO 11: If p_value is very small (e.g., <= 0.0001), set fun_message to a fun message
-    fun_message = None
+    if p_value is not None and p_value <= 0.0001:
+        fun_message = "Wow! That's a rare event! 🚀"
+    else:
+        fun_message = None
 
     # TODO 12: Plot histogram of simulated statistics
+    plt.figure()
+    plt.hist(simulated_stats, bins=15, color='lightblue', edgecolor='black', alpha=
+             0.7)
+    plt.axvline(observed_stat, color='red', linestyle='--', label="Observed Value")
+    plt.axvline(hypothesized_value, color='green', linestyle='-', label="Hypothesized Value")
+    plt.xlabel("Simulated Statistics")
+    plt.ylabel("Frequency")
+    plt.title(f"Histogram of Simulated {parameter.capitalize()}s")
+    plt.legend()
     plot3_path = "static/plot3.png"
+    plt.savefig(plot3_path)
+    plt.close()
     # Replace with code to generate and save the plot
 
     # Return results to template
@@ -184,8 +245,8 @@ def hypothesis_test():
         beta1=beta1,
         S=S,
         # TODO 13: Uncomment the following lines when implemented
-        # p_value=p_value,
-        # fun_message=fun_message,
+        p_value=p_value,
+        fun_message=fun_message,
     )
 
 @app.route("/confidence_interval", methods=["POST"])
@@ -205,7 +266,11 @@ def confidence_interval():
     intercepts = session.get("intercepts")
 
     parameter = request.form.get("parameter")
-    confidence_level = float(request.form.get("confidence_level"))
+    confidence_level = float(request.form.get("confidence_level")) / 100
+    # Debugging print statements for input values
+    print(f"Number of simulations (S): {S}")
+    print(f"Confidence level: {confidence_level}")
+    print(f"Parameter: {parameter}")
 
     # Use the slopes or intercepts from the simulations
     if parameter == "slope":
@@ -218,23 +283,62 @@ def confidence_interval():
         true_param = beta0
 
     # TODO 14: Calculate mean and standard deviation of the estimates
-    mean_estimate = None
-    std_estimate = None
+    mean_estimate = np.mean(estimates)
+    std_estimate = np.std(estimates, ddof=1)
+
+    # Debugging print statements for estimates
+    print(f"Mean estimate: {mean_estimate}")
+    print(f"Standard deviation of estimates: {std_estimate}")
 
     # TODO 15: Calculate confidence interval for the parameter estimate
     # Use the t-distribution and confidence_level
-    ci_lower = None
-    ci_upper = None
+    # Handle cases where std_estimate is zero
+    if std_estimate == 0:
+        ci_lower = ci_upper = mean_estimate
+        includes_true = (true_param == mean_estimate)
+    else:
+        # Calculate confidence interval for the parameter estimate
+        alpha = 1 - confidence_level
+        if S > 1:
+            t_critical = stats.t.ppf(1 - alpha / 2, df=S - 1)
+            margin_of_error = t_critical * (std_estimate / np.sqrt(S))
+            ci_lower = mean_estimate - margin_of_error
+            ci_upper = mean_estimate + margin_of_error
+            includes_true = ci_lower <= true_param <= ci_upper
+        else:
+            # Handle the case where S = 1 (not enough data to form a confidence interval)
+            ci_lower = ci_upper = mean_estimate
+            includes_true = (true_param == mean_estimate)
 
     # TODO 16: Check if confidence interval includes true parameter
-    includes_true = None
+    includes_true = ci_lower <= true_param <= ci_upper
 
     # TODO 17: Plot the individual estimates as gray points and confidence interval
     # Plot the mean estimate as a colored point which changes if the true parameter is included
     # Plot the confidence interval as a horizontal line
     # Plot the true parameter value
+    # Plot the individual estimates as gray points, confidence interval, and true parameter
+    plt.figure(figsize=(8, 4))
+    plt.scatter(estimates, np.zeros_like(estimates), color='gray', alpha=0.5, label="Simulated Estimates")
+    
+    # Plot mean estimate as a separate point
+    plt.plot(mean_estimate, 0, 'bo', label="Mean Estimate", markersize=8)
+
+    # Plot confidence interval as a horizontal line
+    plt.hlines(0, ci_lower, ci_upper, color='blue', label=f"{confidence_level*100}% Confidence Interval", linewidth=3)
+    
+    # Plot true parameter line
+    plt.axvline(true_param, color='green', linestyle='--', label="True Slope", linewidth=2)
+    
+    # Label and format the plot
+    plt.xlabel("Slope Estimate" if parameter == "slope" else "Intercept Estimate")
+    plt.title(f"{confidence_level*100}% Confidence Interval for {parameter.capitalize()} (Mean Estimate)")
+    plt.legend()
+    
+    # Save the plot to a file
     plot4_path = "static/plot4.png"
-    # Write code here to generate and save the plot
+    plt.savefig(plot4_path)
+    plt.close()
 
     # Return results to template
     return render_template(
@@ -243,7 +347,7 @@ def confidence_interval():
         plot2="static/plot2.png",
         plot4=plot4_path,
         parameter=parameter,
-        confidence_level=confidence_level,
+        confidence_level=confidence_level*100,
         mean_estimate=mean_estimate,
         ci_lower=ci_lower,
         ci_upper=ci_upper,
@@ -259,4 +363,4 @@ def confidence_interval():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)
